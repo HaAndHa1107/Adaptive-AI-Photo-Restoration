@@ -1,7 +1,7 @@
-
 import os
 import sys
 import types
+import argparse
 
 # ============================================================
 # 1. 相容性補丁
@@ -33,6 +33,11 @@ from basicsr.utils.realesrgan_utils import RealESRGANer
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", default="inputs/test.jpg")
+    parser.add_argument("--output-dir", default="results")
+    parser.add_argument("--app-mode", action="store_true")
+    args = parser.parse_args()
 
     print("[*] 正在啟動 4K 修復流程...")
 
@@ -43,7 +48,7 @@ def main():
     # 2. 讀取輸入影像
     # ========================================================
 
-    input_path = "inputs/test.jpg"
+    input_path = args.input
 
     if not os.path.exists(input_path):
         print(f"[!] 找不到輸入圖片：{input_path}")
@@ -59,7 +64,7 @@ def main():
     print(f"[*] 成功讀取圖片：{input_path}")
     print(f"[*] 原始解析度：{img.shape[1]} x {img.shape[0]}")
 
-    os.makedirs("results", exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
 
     # ========================================================
     # 3. 載入 Real-ESRGAN
@@ -194,7 +199,6 @@ def main():
     face_tensors = []
 
     for cropped_face in face_helper.cropped_faces:
-
         cropped_face_t = img2tensor(
             cropped_face / 255.0,
             bgr2rgb=True,
@@ -240,7 +244,7 @@ def main():
     # 10. 固定 fidelity_weight 對照實驗
     # ========================================================
 
-    fidelity_weights = [0.3, 0.6, 0.9]
+    fidelity_weights = [] if args.app_mode else [0.3, 0.6, 0.9]
 
     for w in fidelity_weights:
 
@@ -250,10 +254,9 @@ def main():
         face_helper.restored_faces = []
 
         for cropped_face, cropped_face_t in zip(
-            face_helper.cropped_faces,
-            face_tensors,
+                face_helper.cropped_faces,
+                face_tensors,
         ):
-
             with torch.inference_mode():
                 output = net(
                     cropped_face_t,
@@ -301,7 +304,7 @@ def main():
             upsample_img=bg_img.copy()
         )
 
-        out_path = f"results/output_w{w:.1f}.png"
+        out_path = os.path.join(args.output_dir, f"output_w{w:.1f}.png")
 
         imwrite(restored_img, out_path)
 
@@ -321,12 +324,11 @@ def main():
     face_helper.restored_faces = []
 
     for idx, (cropped_face, cropped_face_t) in enumerate(
-        zip(
-            face_helper.cropped_faces,
-            face_tensors,
-        )
+            zip(
+                face_helper.cropped_faces,
+                face_tensors,
+            )
     ):
-
         # 每張人臉使用自己的品質評估結果
         w = adaptive_weights[idx]
 
@@ -366,7 +368,7 @@ def main():
         upsample_img=bg_img.copy()
     )
 
-    adaptive_path = "results/output_adaptive.png"
+    adaptive_path = os.path.join(args.output_dir, "output_adaptive.png")
 
     imwrite(adaptive_img, adaptive_path)
 
@@ -383,7 +385,7 @@ def main():
 
     # 只有單張人臉且自適應選擇 w=0.6 時，
     # 才與固定 w=0.6 的結果做像素比較
-    if len(adaptive_weights) == 1 and adaptive_weights[0] == 0.6:
+    if not args.app_mode and len(adaptive_weights) == 1 and adaptive_weights[0] == 0.6:
 
         baseline = cv2.imread("results/output_w0.6.png")
         adaptive = cv2.imread(adaptive_path)
